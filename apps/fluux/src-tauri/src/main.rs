@@ -2222,19 +2222,10 @@ fn main() {
                             let _ = window.hide();
                         }
                     }
-                    WindowEvent::Resized(_) => {
-                        let behavior = app_handle.state::<window_behavior::WindowBehavior>();
-                        let tray_available = app_handle.tray_by_id(MAIN_TRAY_ID).is_some();
-                        if window_behavior::should_hide_on_minimize(
-                            behavior.keep_in_tray(),
-                            tray_available,
-                            window.is_minimized().unwrap_or(false),
-                            window_hidden_to_tray_for_events.load(Ordering::Relaxed),
-                        ) {
-                            window_hidden_to_tray_for_events.store(true, Ordering::Relaxed);
-                            let _ = window.hide();
-                        }
-                    }
+                    // Windows: minimizing must keep the window on the taskbar.
+                    // Only the close button (handled above) should hide to tray.
+                    // Hiding on Resized removed the taskbar button and prevented
+                    // Windows from displaying attention/badge indicators there.
                     // WebView2 can report focus changes caused by a focus request.
                     // Requesting webview focus again here can sustain a loop (#1418).
                     WindowEvent::Focused(true) => {
