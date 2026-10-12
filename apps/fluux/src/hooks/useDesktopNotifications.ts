@@ -30,6 +30,7 @@ import { currentAccountId, postNativeDesktopNotification } from '@/utils/nativeN
 import { createNotificationCoalescer } from './notificationCoalescer'
 import { requestAttention } from '@/utils/attention'
 import { platform } from '@/platform'
+import { showWindowsToast } from '@/utils/windowsToast'
 
 /** Duration of the post-reconnect window during which offline-delivery
  *  notifications are coalesced to one per conversation. */
@@ -192,7 +193,7 @@ export function useDesktopNotifications(): void {
   const showConversationNotification = async (conv: Conversation, message: Message) => {
     if (presenceStatusRef.current === 'dnd') return
     requestAttention()
-    if (!getNotificationPermissionGranted()) {
+    if (!(platform().shell === 'desktop' && platform().os === 'windows') && !getNotificationPermissionGranted()) {
       notificationDebug.desktopNotification({
         title: conv.name || getLocalPart(message.from),
         body: '(permission not granted)',
@@ -224,7 +225,15 @@ export function useDesktopNotifications(): void {
     if (platform().notificationsManagedByOS) {
       const accountId = currentAccountId()
       if (!(await isMobileTauri())) {
-        await postNativeDesktopNotification({
+        const toastPayload = {
+          title,
+          body,
+          navType: 'conversation' as const,
+          navTarget: conv.id,
+          messageId: message.id,
+          accountId,
+        }
+        if (platform().os !== 'windows' || !(await showWindowsToast(toastPayload))) await postNativeDesktopNotification({
           title,
           body,
           navType: 'conversation',
@@ -271,7 +280,7 @@ export function useDesktopNotifications(): void {
   const showRoomNotification = async (room: Room, message: RoomMessage) => {
     if (presenceStatusRef.current === 'dnd') return
     requestAttention()
-    if (!getNotificationPermissionGranted()) {
+    if (!(platform().shell === 'desktop' && platform().os === 'windows') && !getNotificationPermissionGranted()) {
       notificationDebug.desktopNotification({
         title: `${message.nick} @ ${room.name}`,
         body: '(permission not granted)',
@@ -296,7 +305,15 @@ export function useDesktopNotifications(): void {
     if (platform().notificationsManagedByOS) {
       const accountId = currentAccountId()
       if (!(await isMobileTauri())) {
-        await postNativeDesktopNotification({
+        const toastPayload = {
+          title,
+          body,
+          navType: 'room' as const,
+          navTarget: room.jid,
+          messageId: message.id,
+          accountId,
+        }
+        if (platform().os !== 'windows' || !(await showWindowsToast(toastPayload))) await postNativeDesktopNotification({
           title,
           body,
           navType: 'room',
