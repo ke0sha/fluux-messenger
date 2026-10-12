@@ -13,11 +13,66 @@ async function setTauriBadge(count: number): Promise<void> {
   try {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
     const window = getCurrentWindow()
-    // Pass undefined to clear badge, number to set it
-    await window.setBadgeCount(count > 0 ? count : undefined)
+    if (platform().os === 'windows') {
+      await setWindowsTaskbarBadge(window, count)
+    } else {
+      // Windows does not implement setBadgeCount; other desktop hosts do.
+      await window.setBadgeCount(count > 0 ? count : undefined)
+    }
   } catch {
     // Badge API may not be available on all platforms
   }
+}
+
+// Windows taskbar badges use a small overlay icon, not setBadgeCount.
+// Serialize asynchronous updates so a slow previous render cannot overwrite
+// a newer unread count. Drawing RGBA directly avoids extra Rust image features.
+let windowsBadgeQueue: Promise<void> = Promise.resolve()
+
+async function setWindowsTaskbarBadge(
+  window: import('@tauri-apps/api/window').Window,
+  count: number,
+): Promise<void> {
+  const update = async (): Promise<void> => {
+    if (count <= 0) {
+      await window.setOverlayIcon(undefined)
+      return
+    }
+
+    const size = 32
+    const canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    // Transparent background and a crisp red circular notification badge.
+    ctx.clearRect(0, 0, size, size)
+    ctx.beginPath()
+    ctx.arc(16, 16, 15, 0, Math.PI * 2)
+    ctx.fillStyle = '#e53935'
+    ctx.fill()
+    ctx.lineWidth = 2
+    ctx.strokeStyle = '#ffffff'
+    ctx.stroke()
+    ctx.fillStyle = '#ffffff'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    const label = count > 99 ? '99+' : String(count)
+    ctx.font = `bold ${label.length > 2 ? 13 : 19}px Arial, sans-serif`
+    ctx.fillText(label, 16, 17)
+
+    const { Image } = await import('@tauri-apps/api/image')
+    const image = await Image.new(new Uint8Array(ctx.getImageData(0, 0, size, size).data), size, size)
+    try {
+      await window.setOverlayIcon(image)
+    } finally {
+      await image.close()
+    }
+  }
+
+  windowsBadgeQueue = windowsBadgeQueue.catch(() => {}).then(update)
+  await windowsBadgeQueue
 }
 
 // Browser favicon badge implementation
