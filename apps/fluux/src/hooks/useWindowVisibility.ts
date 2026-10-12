@@ -3,6 +3,7 @@ import { connectionStore, chatStore, roomStore } from '@fluux/sdk'
 import { dismissNotification } from '@/utils/dismissNotification'
 import { refreshCurrentDay } from '@/stores/currentDayStore'
 import { isViewportAtBottom } from '@/utils/viewportAtBottom'
+import { platform } from '@/platform'
 
 /**
  * Hook to track window focus and update the SDK store.
@@ -46,14 +47,17 @@ export function useWindowVisibility(): void {
       if (!wasFocused && isFocused) {
         const activeConversationId = chatStore.getState().activeConversationId
         if (activeConversationId) {
-          if (isViewportAtBottom('conversation', activeConversationId)) {
+          // On Windows, restoring a hidden/minimized window must not implicitly
+          // mark the last-open conversation as read. Leave unread state untouched
+          // until the user explicitly reads/navigates the conversation.
+          if (platform().os !== 'windows' && isViewportAtBottom('conversation', activeConversationId)) {
             chatStore.getState().markAsRead(activeConversationId)
           }
           void dismissNotification('conversation', activeConversationId)
         }
         const activeRoomJid = roomStore.getState().activeRoomJid
         if (activeRoomJid) {
-          if (isViewportAtBottom('room', activeRoomJid)) {
+          if (platform().os !== 'windows' && isViewportAtBottom('room', activeRoomJid)) {
             roomStore.getState().markAsRead(activeRoomJid)
           }
           void dismissNotification('room', activeRoomJid)
