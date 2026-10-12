@@ -7,6 +7,7 @@ import { RenderLoopBoundary, RenderLoopWarningBanner } from './components/Render
 import { WindowControls } from './components/WindowControls'
 import { ROUTER_USE_TRANSITIONS } from './config/routerTransitions'
 import App from './App'
+import { WindowsToast } from './components/WindowsToast'
 import './i18n'
 import './index.css'
 
@@ -192,6 +193,11 @@ const renderApp = () => ReactDOM.createRoot(document.getElementById('root')!).re
   </React.StrictMode>,
 )
 
+if (new URLSearchParams(window.location.search).has('fluuxToast')) {
+  ReactDOM.createRoot(document.getElementById('root')!).render(<WindowsToast />)
+} else {
 void installKeychainFastTokens()
   .catch((error) => console.error('[Fluux] Keychain: FAST tokens unavailable:', error))
   .finally(renderApp)
+
+}
