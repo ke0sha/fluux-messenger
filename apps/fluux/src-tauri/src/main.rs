@@ -2231,18 +2231,15 @@ fn main() {
                 let window_hidden_to_tray_for_events = window_hidden_to_tray.clone();
                 main_window.on_window_event(move |event| match event {
                     WindowEvent::CloseRequested { api, .. } => {
-                        let behavior = app_handle.state::<window_behavior::WindowBehavior>();
-                        let tray_available = app_handle.tray_by_id(MAIN_TRAY_ID).is_some();
-                        if window_behavior::close_action(
-                            behavior.keep_in_tray(),
-                            tray_available,
-                        ) == window_behavior::CloseAction::HideToTray
-                        {
-                            api.prevent_close();
-                            let _ = app_handle.save_window_state(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED | StateFlags::FULLSCREEN);
-                            window_hidden_to_tray_for_events.store(true, Ordering::Relaxed);
-                            let _ = window.hide();
-                        }
+                        api.prevent_close();
+                        let _ = app_handle.save_window_state(
+                            StateFlags::SIZE
+                                | StateFlags::POSITION
+                                | StateFlags::MAXIMIZED
+                                | StateFlags::FULLSCREEN,
+                        );
+                        window_hidden_to_tray_for_events.store(false, Ordering::Relaxed);
+                        let _ = window.minimize();                    
                     }
                     // Windows: minimizing must keep the window on the taskbar.
                     // Only the close button (handled above) should hide to tray.
