@@ -1160,6 +1160,26 @@ fn tray_available(app: &tauri::AppHandle) -> bool {
     }
 }
 
+// Windows taskbar overlays do not automatically change the notification-area icon.
+// Accept a 32x32 RGBA bitmap from the existing badge hook and update the tray.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn set_windows_tray_badge(app: tauri::AppHandle, rgba: Option<Vec<u8>>) -> Result<(), String> {
+    let Some(tray) = app.tray_by_id(MAIN_TRAY_ID) else {
+        return Ok(());
+    };
+    let icon = match rgba {
+        Some(bytes) => {
+            if bytes.len() != 32 * 32 * 4 {
+                return Err("Tray badge must be a 32x32 RGBA image".into());
+            }
+            tauri::image::Image::new_owned(bytes, 32, 32)
+        }
+        None => app.default_window_icon().ok_or("Missing default application icon")?.clone(),
+    };
+    tray.set_icon(Some(icon)).map_err(|error| error.to_string())
+}
+
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 #[tauri::command]
 fn get_tray_status(
@@ -1520,6 +1540,8 @@ fn main() {
             open_logs_folder,
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             get_tray_status,
+            #[cfg(target_os = "windows")]
+            set_windows_tray_badge,
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             set_keep_in_tray,
             openpgp::openpgp_ensure_key,
