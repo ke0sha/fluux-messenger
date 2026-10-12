@@ -216,6 +216,7 @@ export function useNotificationBadge(): void {
   })
 
   const faviconBadgeRef = useRef<FaviconBadge | null>(null)
+  const latestUnreadCountRef = useRef(0)
 
   // Initialize favicon badge handler (browser only)
   useEffect(() => {
@@ -228,6 +229,52 @@ export function useNotificationBadge(): void {
     }
   }, [])
 
+  // Windows may discard a taskbar overlay when a window is hidden and later
+  // shown again. This does NOT change unread state, so the badge-count effect
+  // below will not rerun. Reapply the last known overlay on window restore.
+  useEffect(() => {
+    if (platform().os !== 'windows' || !platform().hasNativeAppBadge) return
+
+    let disposed = false
+    let redrawTimer: ReturnType<typeof setTimeout> | undefined
+    let unlistenFocus: (() => void) | undefined
+
+    const redraw = () => {
+      if (document.hidden) return
+      if (redrawTimer !== undefined) clearTimeout(redrawTimer)
+      redrawTimer = setTimeout(() => {
+        redrawTimer = undefined
+        if (!disposed) void setTauriBadge(latestUnreadCountRef.current)
+      }, 200)
+    }
+
+    // The OS can recreate the taskbar button during show/restore; wait a
+    // moment for that button to exist before setting its overlay again.
+    const subscribe = async () => {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window')
+        const remove = await getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+          if (focused) redraw()
+        })
+        if (disposed) remove()
+        else unlistenFocus = remove
+      } catch {
+        // The DOM visibility/focus event below still covers common restores.
+      }
+    }
+
+    void subscribe()
+    window.addEventListener('focus', redraw)
+    document.addEventListener('visibilitychange', redraw)
+    return () => {
+      disposed = true
+      if (redrawTimer !== undefined) clearTimeout(redrawTimer)
+      unlistenFocus?.()
+      window.removeEventListener('focus', redraw)
+      document.removeEventListener('visibilitychange', redraw)
+    }
+  }, [])
+
   // Update badge when any unread count changes
   useEffect(() => {
     const totalCount = computeBadgeCount({
@@ -235,6 +282,8 @@ export function useNotificationBadge(): void {
       roomsWithUnreadCount,
       eventsPendingCount,
     })
+
+    latestUnreadCountRef.current = totalCount
 
     notificationDebug.dockBadge({
       count: totalCount,
