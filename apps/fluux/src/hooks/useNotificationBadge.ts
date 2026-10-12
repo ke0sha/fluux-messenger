@@ -36,6 +36,8 @@ async function setWindowsTaskbarBadge(
   const update = async (): Promise<void> => {
     if (count <= 0) {
       await window.setOverlayIcon(undefined)
+      const { invoke } = await import('@tauri-apps/api/core')
+      await invoke('set_windows_tray_badge', { rgba: null })
       return
     }
 
@@ -66,6 +68,40 @@ async function setWindowsTaskbarBadge(
     const image = await Image.new(new Uint8Array(ctx.getImageData(0, 0, size, size).data), size, size)
     try {
       await window.setOverlayIcon(image)
+      // The tray is an independent icon and needs its own bitmap.
+      // Share the same overlay with the tray, preserving the Fluent badge count.
+      const { invoke } = await import('@tauri-apps/api/core')
+      const trayCanvas = document.createElement('canvas')
+      trayCanvas.width = 32
+      trayCanvas.height = 32
+      const trayCtx = trayCanvas.getContext('2d')
+      if (trayCtx) {
+        // Draw the existing app favicon underneath a compact badge.
+        const favicon = new globalThis.Image()
+        favicon.src = '/favicon.png'
+        try {
+          await favicon.decode()
+          trayCtx.drawImage(favicon, 0, 0, 32, 32)
+        } catch {
+          // Keep badge visible even if the favicon is missing.
+        }
+        trayCtx.beginPath()
+        trayCtx.arc(25, 8, 7, 0, Math.PI * 2)
+        trayCtx.fillStyle = '#e53935'
+        trayCtx.fill()
+        trayCtx.lineWidth = 1.3
+        trayCtx.strokeStyle = '#ffffff'
+        trayCtx.stroke()
+        trayCtx.fillStyle = '#ffffff'
+        trayCtx.textAlign = 'center'
+        trayCtx.textBaseline = 'middle'
+        const trayLabel = count > 99 ? '99+' : String(count)
+        trayCtx.font = `bold ${trayLabel.length > 2 ? 6 : 9}px Arial, sans-serif`
+        trayCtx.fillText(trayLabel, 25, 8)
+        await invoke('set_windows_tray_badge', {
+          rgba: Array.from(trayCtx.getImageData(0, 0, 32, 32).data),
+        })
+      }
     } finally {
       await image.close()
     }
