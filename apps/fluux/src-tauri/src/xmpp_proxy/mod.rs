@@ -357,10 +357,24 @@ fn create_tls_connector() -> Result<TlsConnector, String> {
                     .to_string(),
             );
         }
+        // Skip malformed/incompatible Windows roots instead of breaking TLS for all servers.
+        // Log the public DER certificate as Base64 to identify the exact Windows store entry.
+        use base64::Engine as _;
+        let mut valid_roots = 0usize;
         for cert in native_certs.certs {
-            root_store
-                .add(cert)
-                .map_err(|e| format!("Failed to add cert: {}", e))?;
+            match root_store.add(cert.clone()) {
+                Ok(()) => valid_roots += 1,
+                Err(e) => {
+                    warn!(
+                        error = %e,
+                        bad_windows_ca_base64 = %base64::engine::general_purpose::STANDARD.encode(cert.as_ref()),
+                        "Skipping incompatible system CA certificate"
+                    );
+                }
+            }
+        }
+        if valid_roots == 0 {
+            return Err("No usable system root certificates found".to_string());
         }
 
         ClientConfig::builder()
