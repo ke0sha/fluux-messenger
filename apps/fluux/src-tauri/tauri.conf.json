@@ -21,7 +21,7 @@
       ]
     },
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI2NjcwQTg3QjlBOTc3RDkKUldUWmQ2bTVod3BuSmdJVExJR2NRYWcrc253RmFJdVN4YTluUGhiZDVvZXFVOVR3eGNXdWllVGIK",
+      "pubkey": "REPLACE_WITH_YOUR_TAURI_PUBLIC_KEY",
       "endpoints": [
         "https://github.com/ke0sha/fluux-messenger/releases/latest/download/latest.json"
       ],
@@ -68,7 +68,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
+    "targets": "all",
     "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
@@ -89,7 +89,7 @@
         "type": "embedBootstrapper"
       },
       "wix": {
-        "upgradeCode": "f2be7858-a22d-4c57-a53a-6b19b5319f40",
+        "upgradeCode": "e85ab1f6-df0d-5dcb-bde0-f1b5325ab9b0",
         "bannerPath": "installer/windows/wix-banner.bmp",
         "dialogImagePath": "installer/windows/wix-dialog.bmp"
       },

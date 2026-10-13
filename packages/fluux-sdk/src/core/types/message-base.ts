@@ -115,6 +115,8 @@ export interface BaseMessage {
   timestamp: Date
   /** True if this message was sent by the current user */
   isOutgoing: boolean
+  /** XEP-0333: the sender explicitly requested read markers. */
+  markable?: boolean
   /** XEP-0203: Message was delivered with delay (historical/offline) */
   isDelayed?: boolean
   /** XEP-0393: Sender requested no message styling */

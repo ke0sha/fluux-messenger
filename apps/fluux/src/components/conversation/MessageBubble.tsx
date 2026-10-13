@@ -7,10 +7,11 @@ import { iosHaptic } from '@/platform/ios/haptics'
  */
 import { useState, useMemo, useRef, useEffect, memo, type CSSProperties, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CornerUpRight, AlertCircle, RefreshCw, Shield, ShieldCheck, ShieldX, ShieldAlert, Ear, UserX } from 'lucide-react'
+import { CornerUpRight, AlertCircle, RefreshCw, Shield, ShieldCheck, ShieldX, ShieldAlert, Ear, UserX, Check, CheckCheck } from 'lucide-react'
 import { formatMessagePreview, formatXMPPError, getBareJid, type BaseMessage, type MentionReference, type Contact, type ContactIdentity, type RoomRole, type RoomAffiliation } from '@fluux/sdk'
 import { useVerifiedPeerKeysStore } from '@/stores/verifiedPeerKeysStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useChatStore } from '@fluux/sdk/react'
 import { Avatar } from '../Avatar'
 import { NickText, NickSentence } from '../NickText'
 import { AvatarLightbox } from '../AvatarLightbox'
@@ -371,6 +372,23 @@ export const MessageBubble = memo(function MessageBubble({
   ownGroupKey,
 }: MessageBubbleProps) {
   const { t } = useTranslation()
+  const peerReadThrough = useChatStore(state => message.type === 'chat' && message.isOutgoing
+    ? state.conversationMeta.get((message as BaseMessage & { conversationId: string }).conversationId)?.peerReadThrough
+    : undefined)
+  const isConfirmedRead = !!peerReadThrough && message.timestamp.getTime() < peerReadThrough.timestamp ||
+    (!!peerReadThrough && message.timestamp.getTime() === peerReadThrough.timestamp &&
+      (message.id === peerReadThrough.messageId || message.originId === peerReadThrough.messageId))
+  // Keep the receipt inline with the LAST text line: the previous standalone
+  // sibling after CollapsibleContent added a whole extra line to every message.
+  const receipt = message.type === 'chat' && message.isOutgoing && !message.isRetracted && !message.deliveryError ? (
+    <span
+      className={`ms-1 inline-flex align-[-0.13em] whitespace-nowrap select-none ${isConfirmedRead ? 'text-blue-500' : 'text-fluux-muted'}`}
+      title={isConfirmedRead ? 'Прочитано' : 'Отправлено'}
+      aria-label={isConfirmedRead ? 'Прочитано' : 'Отправлено'}
+    >
+      {isConfirmedRead ? <CheckCheck className="size-3.5" /> : <Check className="size-3.5" />}
+    </span>
+  ) : null
   // Route jumps to the list this row is rendered in, so a click inside a search/activity preview
   // positions that preview instead of no-opping or scrolling the live conversation.
   const requestMessageTarget = useRequestMessageTarget()
@@ -772,6 +790,7 @@ export const MessageBubble = memo(function MessageBubble({
               isDarkMode={isDarkMode}
               highlightTerms={highlightTerms}
               isCurrentMatch={isCurrentMatch}
+              receipt={receipt}
             />
           )}
 
@@ -799,6 +818,12 @@ export const MessageBubble = memo(function MessageBubble({
             <PollClosedCard pollClosed={message.pollClosed} closedAt={message.timestamp} />
           )}
         </CollapsibleContent>
+
+        {/* Receipt follows the text in MessageBody; attachment-only messages have
+            no text line, so they show the same receipt beside the attachment. */}
+        {!message.body && receipt && (
+          <span className="inline-flex align-middle ms-1">{receipt}</span>
+        )}
 
         {/* Reactions display — filter out poll-vote emojis so votes don't double-show as reaction pills */}
         <MessageReactions

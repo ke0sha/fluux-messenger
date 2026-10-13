@@ -511,6 +511,8 @@ interface ChatState {
   deleteConversation: (id: string) => void
   addMessage: (msg: Message, options?: { isLiveArrival?: boolean }) => void
   markAsRead: (conversationId: string) => void
+  /** XEP-0333: persist a peer's cumulative confirmation of our sent message. */
+  recordPeerRead: (conversationId: string, messageId: string) => void
   /** Esc / mark-all-read: use the resident tail (lastMessage if empty) as a
    *  candidate under `advance` / `hasFloorResolutionEvidence` in `shared/readPointer.ts`.
    *  Zero the unread count and drop the divider. The MDS publisher observes
@@ -1629,6 +1631,45 @@ export const chatStore = createStore<ChatState>()(
         const { activeConversationId, conversations } = get()
         if (!activeConversationId) return null
         return conversations.get(activeConversationId) || null
+      },
+
+      recordPeerRead: (conversationId, messageId) => {
+        // Never infer peer reading from presence or the user's own XEP-0490 marker.
+        // Resolve the exact outgoing message before advancing the cumulative boundary.
+        const scope = captureStorageScope()
+        const commit = (message: Message) => {
+          if (!scope.isCurrent() || !message.isOutgoing || !Number.isFinite(message.timestamp?.getTime())) return
+          set(state => {
+            const current = state.conversationMeta.get(conversationId)
+            if (!current) return state
+            const timestamp = message.timestamp.getTime()
+            if ((current.peerReadThrough?.timestamp ?? -1) > timestamp) return state
+            if (current.peerReadThrough?.timestamp === timestamp && current.peerReadThrough.messageId === messageId) return state
+            const draft = draftConversationMaps(state)
+            draft.patchMeta(conversationId, {
+              peerReadThrough: { messageId, timestamp },
+              pendingPeerReadMessageId: undefined,
+            })
+            return { ...state, ...draft.commit() }
+          })
+        }
+        const resident = get().messages.get(conversationId)?.find(m => m.isOutgoing &&
+          (m.id === messageId || m.originId === messageId || m.stanzaId === messageId))
+        if (resident) { commit(resident); return }
+        // Messages outside the live resident window live in IndexedDB.
+        void messageCache.getMessageByReference(conversationId, messageId).then(cached => {
+          if (!scope.isCurrent()) return
+          if (cached?.isOutgoing) { commit(cached); return }
+          // A receipt may arrive before MAM fills the offline gap. Preserve it until
+          // the target appears; never claim a timestamp we cannot verify.
+          set(state => {
+            const meta = state.conversationMeta.get(conversationId)
+            if (!meta || meta.pendingPeerReadMessageId === messageId) return state
+            const draft = draftConversationMaps(state)
+            draft.patchMeta(conversationId, { pendingPeerReadMessageId: messageId })
+            return { ...state, ...draft.commit() }
+          })
+        }).catch(error => logWarn(`Failed to resolve peer read marker: ${String(error)}`))
       },
 
       activeMessages: () => {
@@ -3255,6 +3296,19 @@ chatStore.subscribe((state, previous) => {
     'chat',
   )
   if (counts !== state.firstNewMessageCounts) chatStore.setState({ firstNewMessageCounts: counts })
+})
+
+// A peer XEP-0333 marker received before its outgoing target entered the cache
+// is retried when the resident window changes. Resolution is idempotent.
+chatStore.subscribe((state, previous) => {
+  const conversationId = state.activeConversationId
+  if (!conversationId) return
+  if (state.messages.get(conversationId) === previous.messages.get(conversationId)) return
+  const pendingId = state.conversationMeta.get(conversationId)?.pendingPeerReadMessageId
+  if (!pendingId) return
+  const found = state.messages.get(conversationId)?.some(m => m.isOutgoing &&
+    (m.id === pendingId || m.originId === pendingId || m.stanzaId === pendingId))
+  if (found) chatStore.getState().recordPeerRead(conversationId, pendingId)
 })
 
 // A remote read marker no loaded slice could place waits for messages; their arrival is the only

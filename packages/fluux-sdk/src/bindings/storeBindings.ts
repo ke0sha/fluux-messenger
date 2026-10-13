@@ -232,6 +232,10 @@ export function createStoreBindings(
     stores.chat.addMessage(message, { isLiveArrival })
   })
 
+  on('chat:peer-read', ({ conversationId, messageId }) => {
+    getStores().chat.recordPeerRead(conversationId, messageId)
+  })
+
   on('chat:conversation', ({ conversation }) => {
     const stores = getStores()
     stores.chat.addConversation(conversation)

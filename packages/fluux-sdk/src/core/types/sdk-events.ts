@@ -123,6 +123,12 @@ export interface ChatEvents {
     isLiveArrival: boolean
   }
 
+  /** XEP-0333 displayed marker received from the conversation peer. */
+  'chat:peer-read': {
+    conversationId: string
+    messageId: string
+  }
+
   /** New conversation created */
   'chat:conversation': {
     conversation: Conversation

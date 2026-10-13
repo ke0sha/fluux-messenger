@@ -172,6 +172,10 @@ export interface ConversationMetadata {
    * message arrives (see mergeMAMMessages).
    */
   pendingRemoteDisplayedStanzaId?: string
+  /** XEP-0333: peer confirmed reading through this outgoing message. Account-scoped persistence. */
+  peerReadThrough?: { messageId: string; timestamp: number }
+  /** Marker arrived before its referenced outgoing message was cached. */
+  pendingPeerReadMessageId?: string
 }
 
 /**
