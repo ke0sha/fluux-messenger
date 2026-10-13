@@ -378,6 +378,17 @@ export const MessageBubble = memo(function MessageBubble({
   const isConfirmedRead = !!peerReadThrough && message.timestamp.getTime() < peerReadThrough.timestamp ||
     (!!peerReadThrough && message.timestamp.getTime() === peerReadThrough.timestamp &&
       (message.id === peerReadThrough.messageId || message.originId === peerReadThrough.messageId))
+  // Keep the receipt inline with the LAST text line: the previous standalone
+  // sibling after CollapsibleContent added a whole extra line to every message.
+  const receipt = message.type === 'chat' && message.isOutgoing && !message.isRetracted && !message.deliveryError ? (
+    <span
+      className={`ms-1 inline-flex align-[-0.13em] whitespace-nowrap select-none ${isConfirmedRead ? 'text-blue-500' : 'text-fluux-muted'}`}
+      title={isConfirmedRead ? 'Прочитано' : 'Отправлено'}
+      aria-label={isConfirmedRead ? 'Прочитано' : 'Отправлено'}
+    >
+      {isConfirmedRead ? <CheckCheck className="size-3.5" /> : <Check className="size-3.5" />}
+    </span>
+  ) : null
   // Route jumps to the list this row is rendered in, so a click inside a search/activity preview
   // positions that preview instead of no-opping or scrolling the live conversation.
   const requestMessageTarget = useRequestMessageTarget()
@@ -779,6 +790,7 @@ export const MessageBubble = memo(function MessageBubble({
               isDarkMode={isDarkMode}
               highlightTerms={highlightTerms}
               isCurrentMatch={isCurrentMatch}
+              receipt={receipt}
             />
           )}
 
@@ -807,14 +819,10 @@ export const MessageBubble = memo(function MessageBubble({
           )}
         </CollapsibleContent>
 
-        {/* XEP-0333: server-submitted message vs actual peer-confirmed reading.
-            The original timestamp stays above the message, per Custom layout. */}
-        {message.type === 'chat' && message.isOutgoing && !message.isRetracted && !message.deliveryError && (
-          <span className={`ms-auto inline-flex items-center justify-end pe-1 pb-0.5 ${isConfirmedRead ? 'text-blue-500' : 'text-fluux-muted'}`}
-            title={isConfirmedRead ? 'Прочитано' : 'Отправлено'}
-            aria-label={isConfirmedRead ? 'Прочитано' : 'Отправлено'}>
-            {isConfirmedRead ? <CheckCheck className="size-3.5" /> : <Check className="size-3.5" />}
-          </span>
+        {/* Receipt follows the text in MessageBody; attachment-only messages have
+            no text line, so they show the same receipt beside the attachment. */}
+        {!message.body && receipt && (
+          <span className="inline-flex align-middle ms-1">{receipt}</span>
         )}
 
         {/* Reactions display — filter out poll-vote emojis so votes don't double-show as reaction pills */}

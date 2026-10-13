@@ -54,6 +54,8 @@ export interface MessageBodyProps {
   highlightTerms?: string[]
   /** Whether this message is the current find-on-page match */
   isCurrentMatch?: boolean
+  /** Inline outgoing receipt, following the final visible line of text. */
+  receipt?: ReactNode
 }
 
 /**
@@ -82,6 +84,7 @@ export const MessageBody = memo(function MessageBody({
   isDarkMode,
   highlightTerms,
   isCurrentMatch,
+  receipt,
 }: MessageBodyProps) {
   const { t } = useTranslation()
   const mentionColor = mentionColors ? (nick: string) => mentionColors.get(nick)
@@ -126,6 +129,7 @@ export const MessageBody = memo(function MessageBody({
             className="not-italic"
           />
         )}
+        {receipt}
       </div>
     )
   }
@@ -135,6 +139,7 @@ export const MessageBody = memo(function MessageBody({
     <div dir="auto" data-msg-text className="text-fluux-text break-words whitespace-pre-wrap leading-[1.375]">
       {wrap(noStyling ? body : renderStyledMessage(body, mentions, nickname, knownNicks, isDarkMode, mentionColor))}
       {isEdited && <EditedIndicator originalBody={originalBody} />}
+      {receipt}
     </div>
   )
 })
