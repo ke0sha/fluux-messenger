@@ -358,8 +358,6 @@ fn create_tls_connector() -> Result<TlsConnector, String> {
             );
         }
         // Skip malformed/incompatible Windows roots instead of breaking TLS for all servers.
-        // Log the public DER certificate as Base64 to identify the exact Windows store entry.
-        use base64::Engine as _;
         let mut valid_roots = 0usize;
         for cert in native_certs.certs {
             match root_store.add(cert.clone()) {
@@ -367,7 +365,6 @@ fn create_tls_connector() -> Result<TlsConnector, String> {
                 Err(e) => {
                     warn!(
                         error = %e,
-                        bad_windows_ca_base64 = %base64::engine::general_purpose::STANDARD.encode(cert.as_ref()),
                         "Skipping incompatible system CA certificate"
                     );
                 }
