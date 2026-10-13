@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Fluux Messenger",
-  "version": "0.17.4",
-  "identifier": "net.processone.fluux",
+  "productName": "Fluux Messenger Custom",
+  "version": "0.17.5",
+  "identifier": "ru.tkzcranes.fluuxcustom",
   "plugins": {
     "deep-link": {
       "desktop": {
@@ -21,9 +21,9 @@
       ]
     },
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFEMTMyMkQyMzY5QjY2MUEKUldRYVpwczIwaUlUcmZwbkpjY0FqMlYya0s1T2hEUDJLRXFrWmFwRGNkUDE4d3lWR1BCMXhYTEoK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI2NjcwQTg3QjlBOTc3RDkKUldUWmQ2bTVod3BuSmdJVExJR2NRYWcrc253RmFJdVN4YTluUGhiZDVvZXFVOVR3eGNXdWllVGIK",
       "endpoints": [
-        "https://github.com/processone/fluux-messenger/releases/latest/download/latest.json"
+        "https://github.com/ke0sha/fluux-messenger/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"
@@ -42,7 +42,7 @@
   "app": {
     "windows": [
       {
-        "title": "Fluux Messenger",
+        "title": "Fluux Messenger Custom",
         "width": 1000,
         "height": 700,
         "minWidth": 360,
@@ -68,7 +68,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis", "msi"],
     "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
@@ -89,7 +89,7 @@
         "type": "embedBootstrapper"
       },
       "wix": {
-        "upgradeCode": "ac0dbc5c-7b6c-557f-a2aa-5ba7152ac415",
+        "upgradeCode": "f2be7858-a22d-4c57-a53a-6b19b5319f40",
         "bannerPath": "installer/windows/wix-banner.bmp",
         "dialogImagePath": "installer/windows/wix-dialog.bmp"
       },
