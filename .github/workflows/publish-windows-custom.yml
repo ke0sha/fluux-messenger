@@ -1,0 +1,63 @@
+name: Publish Windows Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish, e.g. 0.17.5 (must match tauri.conf.json)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fluux-custom-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/fluux/src-tauri
+      - name: Verify version and signing key
+        shell: pwsh
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          $cfg = Get-Content apps/fluux/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          if ($env:REQUESTED_VERSION -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must be X.Y.Z' }
+          if ($cfg.version -ne $env:REQUESTED_VERSION) { throw "tauri.conf.json version $($cfg.version) != $env:REQUESTED_VERSION" }
+          if ($cfg.plugins.updater.pubkey -like 'REPLACE_*') { throw 'Set Tauri public key in tauri.conf.json first' }
+          if (-not $env:SIGNING_KEY) { throw 'Missing TAURI_SIGNING_PRIVATE_KEY secret' }
+          if (git tag -l "v$env:REQUESTED_VERSION") { throw 'Tag already exists locally' }
+      - name: Install dependencies
+        run: npm ci
+      - name: Build SDK
+        run: npm run build:sdk
+      - name: Publish Windows MSI/EXE and updater JSON
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/fluux
+          tagName: v${{ inputs.version }}
+          releaseName: Fluux Messenger Custom v${{ inputs.version }}
+          releaseBody: 'Unofficial customized Windows build. Not affiliated with ProcessOne.'
+          releaseDraft: false
+          prerelease: false
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: --bundles nsis,msi
