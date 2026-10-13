@@ -74,6 +74,7 @@ import {
   NS_OOB,
   NS_OCCUPANT_ID,
   NS_POLL,
+  NS_CHAT_MARKERS,
 } from '../namespaces'
 import { parsePollElement, parsePollClosedElement } from '../poll'
 import { isItemNotFoundError } from '../../hooks/shared/mamCursor'
@@ -2911,6 +2912,13 @@ export class MAM extends BaseModule {
     if (!messageEl) return null
 
     const from = messageEl.attrs.from
+    // XEP-0333 markers can be archived as bodyless stanzas. Recover read
+    // confirmations during history catch-up, not just while both users are online.
+    const peerDisplayed = messageEl.getChild('displayed', NS_CHAT_MARKERS)
+    if (peerDisplayed?.attrs.id && from && getBareJid(from) === conversationId) {
+      this.deps.emitSDK('chat:peer-read', { conversationId, messageId: peerDisplayed.attrs.id })
+      return null
+    }
     const body = messageEl.getChildText('body')
 
     // Skip modification messages (retractions, corrections, reactions)
@@ -2978,6 +2986,7 @@ export class MAM extends BaseModule {
       body: parsed.processedBody,
       timestamp: parsed.timestamp,
       isOutgoing,
+      ...(!isOutgoing && messageEl.getChild('markable', NS_CHAT_MARKERS) && { markable: true }),
       isDelayed: true,
       ...(parsed.noStyling && { noStyling: parsed.noStyling }),
       ...(parsed.replyTo && { replyTo: parsed.replyTo }),

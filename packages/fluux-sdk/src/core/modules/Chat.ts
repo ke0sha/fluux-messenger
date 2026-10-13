@@ -32,6 +32,7 @@ import {
   NS_OCCUPANT_ID,
   NS_POLL,
   NS_DELAY,
+  NS_CHAT_MARKERS,
 } from '../namespaces'
 import { dataToElement } from '../e2ee/stanzaAdapter'
 import type { E2EEManager } from '../e2ee'
@@ -354,6 +355,18 @@ export class Chat extends BaseModule {
         return { handled: true, message: receiveWhisper(this.parseRoomWhisper(stanza, from!, bareFrom, body || '', isSentCarbon)) }
       }
       // Bodyless whisper (e.g. a stray chat-state): claim and drop.
+      return { handled: true }
+    }
+
+    // XEP-0333: only the other user's marker acknowledges OUR outgoing message.
+    // These bodyless stanzas must never appear as chat bubbles or increase unread counts.
+    const displayed = stanza.getChild('displayed', NS_CHAT_MARKERS)
+    if (displayed && type === 'chat') {
+      const messageId = displayed.attrs.id
+      const myBare = getBareJid(this.deps.getCurrentJid() ?? '')
+      if (messageId && bareFrom !== myBare && !isSentCarbon) {
+        this.deps.emitSDK('chat:peer-read', { conversationId: bareFrom, messageId })
+      }
       return { handled: true }
     }
 
@@ -935,6 +948,8 @@ export class Chat extends BaseModule {
 
     // XEP-0359: Include origin-id for echo deduplication
     children.push(createOriginIdElement(id))
+    // XEP-0333: the peer may acknowledge reading this direct message.
+    if (type === 'chat') children.push(xml('markable', { xmlns: NS_CHAT_MARKERS }))
 
     // E2EE hook: for 1:1 recipients, attempt to encrypt and rewrite the
     // outgoing children. MUC encryption is a later phase. Pass the
@@ -999,6 +1014,16 @@ export class Chat extends BaseModule {
     return id
   }
 
+
+  /**
+   * XEP-0333: Confirm that the local user has actually viewed a peer message.
+   * Only called from a witnessed local read, never from a remote-device MDS marker.
+   */
+  async sendDisplayedMarker(to: string, messageId: string): Promise<void> {
+    if (!to || !messageId || this.conversationKind(to) !== 'chat') return
+    await this.deps.sendStanza(xml('message', { to: getBareJid(to), type: 'chat' },
+      xml('displayed', { xmlns: NS_CHAT_MARKERS, id: messageId })))
+  }
 
   /**
    * Resend a previously failed message.
@@ -2189,6 +2214,7 @@ export class Chat extends BaseModule {
       body: parsed.processedBody,
       timestamp: parsed.timestamp,
       isOutgoing,
+      ...(!isOutgoing && stanza.getChild('markable', NS_CHAT_MARKERS) && { markable: true }),
       ...(parsed.isDelayed && { isDelayed: true }),
       ...(parsed.noStyling && { noStyling: true }),
       ...(parsed.replyTo && { replyTo: parsed.replyTo }),

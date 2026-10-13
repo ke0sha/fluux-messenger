@@ -14,6 +14,7 @@ import { setupRoomSideEffects } from './roomSideEffects'
 import { setupBackgroundSyncSideEffects } from './backgroundSync'
 import { setupConversationSyncSideEffects } from './conversationSyncSideEffects'
 import { setupMdsSideEffects } from './mdsSideEffects'
+import { setupReadReceiptsSideEffects } from './readReceiptsSideEffects'
 
 // Re-export individual setup functions and types
 export { setupChatSideEffects } from './chatSideEffects'
@@ -44,6 +45,7 @@ export function setupStoreSideEffects(
   const unsubscribeSync = setupBackgroundSyncSideEffects(client, options)
   const unsubscribeConversationSync = setupConversationSyncSideEffects(client, options)
   const unsubscribeMds = setupMdsSideEffects(client, options)
+  const unsubscribeReceipts = setupReadReceiptsSideEffects(client)
 
   return () => {
     unsubscribeChat()
@@ -51,5 +53,6 @@ export function setupStoreSideEffects(
     unsubscribeSync()
     unsubscribeConversationSync()
     unsubscribeMds()
+    unsubscribeReceipts()
   }
 }

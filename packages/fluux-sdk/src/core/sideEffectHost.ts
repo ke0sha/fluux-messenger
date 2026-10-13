@@ -113,6 +113,7 @@ export interface SideEffectHost extends SDKEventSource {
   /** Null until an identity is logged in — every caller must handle that. */
   readonly e2ee: E2EEWarmupHost | null
   readonly rooms: MucSideEffectHost
+  readonly messages?: { sendDisplayedMarker(to: string, messageId: string): Promise<void> }
   readonly server: DiscoverySideEffectHost
   /**
    * The modules the SDK drives rather than offers. Grouped so the client can

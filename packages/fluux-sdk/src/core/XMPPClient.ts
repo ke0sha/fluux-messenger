@@ -651,6 +651,7 @@ export class XMPPClient {
   private createSideEffectHost(): SideEffectHost {
     const getE2EE = () => this.e2ee
     const getRooms = () => this.rooms
+    const getMessages = () => this.messages
     const getServer = () => this.server
     const getInternal = () => this.#internal
     return {
@@ -659,6 +660,7 @@ export class XMPPClient {
       retryPendingDecrypts: () => this.retryPendingDecrypts(),
       get e2ee() { return getE2EE() },
       get rooms() { return getRooms() },
+      get messages() { return getMessages() },
       get server() { return getServer() },
       get internal() { return getInternal() },
     }

@@ -7,10 +7,11 @@ import { iosHaptic } from '@/platform/ios/haptics'
  */
 import { useState, useMemo, useRef, useEffect, memo, type CSSProperties, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CornerUpRight, AlertCircle, RefreshCw, Shield, ShieldCheck, ShieldX, ShieldAlert, Ear, UserX } from 'lucide-react'
+import { CornerUpRight, AlertCircle, RefreshCw, Shield, ShieldCheck, ShieldX, ShieldAlert, Ear, UserX, Check, CheckCheck } from 'lucide-react'
 import { formatMessagePreview, formatXMPPError, getBareJid, type BaseMessage, type MentionReference, type Contact, type ContactIdentity, type RoomRole, type RoomAffiliation } from '@fluux/sdk'
 import { useVerifiedPeerKeysStore } from '@/stores/verifiedPeerKeysStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useChatStore } from '@fluux/sdk/react'
 import { Avatar } from '../Avatar'
 import { NickText, NickSentence } from '../NickText'
 import { AvatarLightbox } from '../AvatarLightbox'
@@ -371,6 +372,12 @@ export const MessageBubble = memo(function MessageBubble({
   ownGroupKey,
 }: MessageBubbleProps) {
   const { t } = useTranslation()
+  const peerReadThrough = useChatStore(state => message.type === 'chat' && message.isOutgoing
+    ? state.conversationMeta.get((message as BaseMessage & { conversationId: string }).conversationId)?.peerReadThrough
+    : undefined)
+  const isConfirmedRead = !!peerReadThrough && message.timestamp.getTime() < peerReadThrough.timestamp ||
+    (!!peerReadThrough && message.timestamp.getTime() === peerReadThrough.timestamp &&
+      (message.id === peerReadThrough.messageId || message.originId === peerReadThrough.messageId))
   // Route jumps to the list this row is rendered in, so a click inside a search/activity preview
   // positions that preview instead of no-opping or scrolling the live conversation.
   const requestMessageTarget = useRequestMessageTarget()
@@ -799,6 +806,16 @@ export const MessageBubble = memo(function MessageBubble({
             <PollClosedCard pollClosed={message.pollClosed} closedAt={message.timestamp} />
           )}
         </CollapsibleContent>
+
+        {/* XEP-0333: server-submitted message vs actual peer-confirmed reading.
+            The original timestamp stays above the message, per Custom layout. */}
+        {message.type === 'chat' && message.isOutgoing && !message.isRetracted && !message.deliveryError && (
+          <span className={`ms-auto inline-flex items-center justify-end pe-1 pb-0.5 ${isConfirmedRead ? 'text-blue-500' : 'text-fluux-muted'}`}
+            title={isConfirmedRead ? 'Прочитано' : 'Отправлено'}
+            aria-label={isConfirmedRead ? 'Прочитано' : 'Отправлено'}>
+            {isConfirmedRead ? <CheckCheck className="size-3.5" /> : <Check className="size-3.5" />}
+          </span>
+        )}
 
         {/* Reactions display — filter out poll-vote emojis so votes don't double-show as reaction pills */}
         <MessageReactions
