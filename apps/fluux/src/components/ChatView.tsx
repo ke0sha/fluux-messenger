@@ -92,7 +92,7 @@ export function ChatView({ onBack, onSwitchToMessages, onSearchInConversation, o
   const [editingMessage, setEditingMessage] = useState<Message | null>(null)
 
   // Pending attachment state - staged file ready to send with next message
-  const [pendingAttachment, setPendingAttachment] = useState<PendingAttachment | null>(null)
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
 
   // Track last sent message ID for send animation
   const [lastSentMessageId, setLastSentMessageId] = useState<string | null>(null)
@@ -236,8 +236,8 @@ export function ChatView({ onBack, onSwitchToMessages, onSearchInConversation, o
   // message only loads later. Store subscription = reactive, no freeze.
 
   // Track pendingAttachment in a ref for cleanup (not a trigger)
-  const pendingAttachmentRef = useRef(pendingAttachment)
-  pendingAttachmentRef.current = pendingAttachment
+  const pendingAttachmentsRef = useRef(pendingAttachments)
+  pendingAttachmentsRef.current = pendingAttachments
 
   // Clear reply/edit/pending attachment state when conversation changes
   // Note: scroll position is managed by MessageList component
@@ -266,10 +266,10 @@ export function ChatView({ onBack, onSwitchToMessages, onSearchInConversation, o
     setReplyingTo(null)
     setEditingMessage(null)
     // Revoke old preview URL to avoid memory leaks
-    if (pendingAttachmentRef.current?.previewUrl) {
-      URL.revokeObjectURL(pendingAttachmentRef.current.previewUrl)
+    for (const pending of pendingAttachmentsRef.current) {
+      if (pending.previewUrl) URL.revokeObjectURL(pending.previewUrl)
     }
-    setPendingAttachment(null)
+    setPendingAttachments([])
     clearSelection()
   }, [activeConversation?.id, clearSelection])
 
@@ -286,17 +286,19 @@ export function ChatView({ onBack, onSwitchToMessages, onSearchInConversation, o
     const previewUrl = file.type.startsWith('image/') || file.type.startsWith('video/')
       ? URL.createObjectURL(file)
       : undefined
-    setPendingAttachment({ file, previewUrl })
+    setPendingAttachments((current) => [...current, { file, previewUrl }])
     // Focus composer so user can add a message
     setTimeout(() => composerHandleRef.current?.focus(), 0)
   }, [activeConversation, isSupported])
 
   // Clear pending attachment and revoke preview URL
-  const handleRemovePendingAttachment = useCallback(() => {
-    if (pendingAttachmentRef.current?.previewUrl) {
-      URL.revokeObjectURL(pendingAttachmentRef.current.previewUrl)
-    }
-    setPendingAttachment(null)
+  const handleRemovePendingAttachmentAt = useCallback((index: number) => {
+    setPendingAttachments((current) => {
+      const removed = current[index]
+      if (!removed) return current
+      if (removed.previewUrl) URL.revokeObjectURL(removed.previewUrl)
+      return current.filter((_, position) => position !== index)
+    })
   }, [])
 
   // Drag-and-drop for file upload (handles both HTML5 and Tauri native)
@@ -638,8 +640,8 @@ export function ChatView({ onBack, onSwitchToMessages, onSearchInConversation, o
         isUploadSupported={isSupported}
         onFileSelect={handleFileDrop}
         uploadFile={uploadFile}
-        pendingAttachment={pendingAttachment}
-        onRemovePendingAttachment={handleRemovePendingAttachment}
+        pendingAttachments={pendingAttachments}
+        onRemovePendingAttachmentAt={handleRemovePendingAttachmentAt}
         processLinkPreview={processMessageForLinkPreview}
         isConnected={isConnected}
         onSwitchToMessages={onSwitchToMessages}
@@ -1149,8 +1151,8 @@ export const MessageInput = memo(function MessageInput({
   isUploadSupported,
   onFileSelect,
   uploadFile,
-  pendingAttachment,
-  onRemovePendingAttachment,
+  pendingAttachments,
+  onRemovePendingAttachmentAt,
   processLinkPreview,
   onSwitchToMessages,
   onMessageIdSent,
@@ -1187,8 +1189,8 @@ export const MessageInput = memo(function MessageInput({
   isUploadSupported?: boolean
   onFileSelect?: (file: File) => void
   uploadFile?: (file: File, options?: { encrypt?: boolean }) => Promise<import('@fluux/sdk').FileAttachment | null>
-  pendingAttachment?: PendingAttachment | null
-  onRemovePendingAttachment?: () => void
+  pendingAttachments?: PendingAttachment[]
+  onRemovePendingAttachmentAt?: (index: number) => void
   processLinkPreview?: (messageId: string, body: string, to: string, type: 'chat' | 'groupchat') => Promise<void>
   onSwitchToMessages?: (conversationId: string) => void
   encryptionState: ConversationEncryptionState
@@ -1314,44 +1316,52 @@ export const MessageInput = memo(function MessageInput({
       }
     }
 
-    // If there's a pending attachment, upload it first (privacy: only upload when user explicitly sends).
-    // When the conversation is E2EE-active we encrypt the file bytes
-    // client-side with a fresh AES-256-GCM key before upload; the key/IV
-    // then ride inside the OpenPGP `<payload/>` via the SDK's stanza
-    // assembly, so the HTTP Upload server stores only ciphertext.
-    let attachment: import('@fluux/sdk').FileAttachment | null | undefined
-    if (pendingAttachment && uploadFile) {
-      const encryptAttachment = encryptionState.kind === 'encrypted'
-      attachment = await uploadFile(pendingAttachment.file, { encrypt: encryptAttachment })
-      if (!attachment) {
-        // Upload failed - don't send the message
-        return false
+    // One XMPP message carries one file-share attachment. Upload/send selected
+    // files sequentially; the first message can carry the typed text and reply.
+    // Every successful send is removed from the staging queue immediately, so a
+    // failure halfway through never sends the already-sent files a second time.
+    const queued = pendingAttachments ?? []
+    let completed = 0
+    const finishPartial = () => {
+      if (completed > 0) {
+        clearDraft(conversationId)
+        useToastStore.getState().addToast('error', t('console.failedToSend'))
+      }
+      return completed > 0
+    }
+    const count = Math.max(1, queued.length)
+    for (let index = 0; index < count; index++) {
+      let attachment: import('@fluux/sdk').FileAttachment | undefined
+      if (queued.length) {
+        if (!uploadFile) return finishPartial()
+        attachment = (await uploadFile(queued[index].file, {
+          encrypt: encryptionState.kind === 'encrypted',
+        })) ?? undefined
+        if (!attachment) return finishPartial()
+      }
+      if (getStorageScopeJid() !== sendingAccount) return finishPartial()
+      const first = index === 0
+      const body = (first ? text : '') || attachment?.url || ''
+      let messageId: string
+      try {
+        messageId = await sendMessage(conversationId, body, {
+          replyTo: first ? replyTo : undefined,
+          attachment,
+        })
+      } catch (error) {
+        if (completed === 0) throw error
+        console.error('[attachments] Failed to send later file:', error)
+        return finishPartial() // text/earlier files were sent; keep unsent files staged
+      }
+      completed++
+      onMessageIdSent?.(messageId)
+      if (queued.length) onRemovePendingAttachmentAt?.(0)
+      if (first && processLinkPreview && text && encryptionState.kind !== 'encrypted') {
+        processLinkPreview(messageId, text, conversationId, type).catch(console.error)
       }
     }
-
-    if (getStorageScopeJid() !== sendingAccount) return false
-
-    // The body is the file URL if no text was entered, otherwise the user's text
-    const body = text || attachment?.url || ''
-    const messageId = await sendMessage(conversationId, body, { replyTo, attachment: attachment ?? undefined })
     void donateIOSConversation(sendingAccount, conversationId, type)
-
-    // Notify parent of sent message ID for animation
-    onMessageIdSent?.(messageId)
-
-    // Clear pending attachment after sending
-    if (pendingAttachment) {
-      onRemovePendingAttachment?.()
-    }
-
-    // Clear draft immediately so sidebar updates
     clearDraft(conversationId)
-
-    // Process link preview in background (don't block on it)
-    // Skip when encrypted — the fastening would leak URL/title/image in cleartext
-    if (processLinkPreview && text && encryptionState.kind !== 'encrypted') {
-      processLinkPreview(messageId, text, conversationId, type).catch(console.error)
-    }
 
     // Clear the "new messages" marker after a short delay (user is actively engaged)
     setTimeout(() => clearFirstNewMessageId(conversationId), 500)
@@ -1384,8 +1394,8 @@ export const MessageInput = memo(function MessageInput({
         onFileSelect={onFileSelect}
         uploadState={uploadState}
         isUploadSupported={isUploadSupported}
-        pendingAttachment={pendingAttachment}
-        onRemovePendingAttachment={onRemovePendingAttachment}
+        pendingAttachments={pendingAttachments}
+        onRemovePendingAttachmentAt={onRemovePendingAttachmentAt}
         disabled={!isConnected}
         value={text}
         onValueChange={setText}

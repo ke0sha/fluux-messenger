@@ -12,6 +12,8 @@ import { useDeferredMedia } from '@/hooks/useDeferredMedia'
 import { useContextMenu } from '@/hooks/useContextMenu'
 import { isPdfMimeType, isDocumentMimeType, isArchiveMimeType, isEbookMimeType, getFileTypeLabel, isRenderableImageMime } from '@/utils/thumbnail'
 import { downloadAttachment } from '@/utils/download'
+import { handleWindowsAttachment } from '@/utils/windowsAttachmentFiles'
+import { platform } from '@/platform'
 import { isUnsupportedMediaType } from '@/utils/mediaSupport'
 import type { FileAttachment } from '@fluux/sdk'
 import { saveActionLabelKey, SaveActionIcon } from '@/utils/saveAction'
@@ -590,6 +592,43 @@ export function FileAttachmentCard({ attachment }: AttachmentProps) {
 
   const cardClass =
     'flex items-center gap-3 p-3 mt-2 max-w-sm rounded-lg bg-fluux-bg/60 border border-fluux-border hover:bg-fluux-hover/60 transition-colors group/file'
+
+  // In Windows Custom, the document/card opens its local copy with the user's
+  // default Windows application. The separate arrow only downloads it.
+  if (platform().shell === 'desktop' && platform().os === 'windows') {
+    const perform = async (mode: 'open' | 'save') => {
+      setBusy(true)
+      try {
+        await handleWindowsAttachment(attachment, mode, t('common.downloadFailed'))
+      } finally {
+        setBusy(false)
+      }
+    }
+    return (
+      <div className={`${cardClass} w-full`} role="group" aria-label={attachment.name || t('chat.file')}>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void perform('open')}
+          className="flex items-center gap-3 flex-1 min-w-0 text-start disabled:opacity-70"
+          aria-label={`${t('chat.file')}: ${attachment.name || ''}`}
+        >
+          {iconWrap}
+          {info}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void perform('save')}
+          aria-label={t(saveActionLabelKey())}
+          title={t(saveActionLabelKey())}
+          className="p-1.5 text-fluux-muted hover:text-fluux-text flex-shrink-0 disabled:opacity-70"
+        >
+          {busy ? <Loader2 className="size-4 animate-spin" /> : <SaveActionIcon className="size-4" />}
+        </button>
+      </div>
+    )
+  }
 
   // Encrypted: the URL points at ciphertext, so a plain link would save
   // unusable bytes. Decrypt on click and save the plaintext instead.

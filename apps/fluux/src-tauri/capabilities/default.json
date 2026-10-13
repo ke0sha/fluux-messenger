@@ -2,8 +2,14 @@
   "$schema": "https://schema.tauri.app/config/2",
   "identifier": "default",
   "description": "Default capabilities for the XMPP client",
-  "platforms": ["macOS", "windows", "linux"],
-  "windows": ["main"],
+  "platforms": [
+    "macOS",
+    "windows",
+    "linux"
+  ],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:path:default",
@@ -48,28 +54,88 @@
     "fs:allow-appconfig-read-recursive",
     {
       "identifier": "fs:allow-read-file",
-      "allow": [{ "path": "**/*" }]
+      "allow": [
+        {
+          "path": "**/*"
+        }
+      ]
     },
     {
       "identifier": "fs:allow-write-file",
-      "allow": [{ "path": "$HOME/**" }]
+      "allow": [
+        {
+          "path": "$HOME/**"
+        },
+        {
+          "path": "$DOWNLOAD/**"
+        }
+      ]
     },
     "clipboard-manager:allow-read-image",
     "deep-link:default",
     "dialog:allow-open",
     "dialog:allow-save",
+    "dialog:allow-ask",
     "updater:default",
     "process:allow-restart",
     {
       "identifier": "http:default",
       "allow": [
-        { "url": "https://*" },
-        { "url": "https://*:*/**" },
-        { "url": "http://*" },
-        { "url": "http://*:*/**" }
+        {
+          "url": "https://*"
+        },
+        {
+          "url": "https://*:*/**"
+        },
+        {
+          "url": "http://*"
+        },
+        {
+          "url": "http://*:*/**"
+        }
       ]
     },
     "http:allow-fetch-read-body",
-    "http:allow-fetch-cancel"
+    "http:allow-fetch-cancel",
+    {
+      "identifier": "fs:allow-mkdir",
+      "allow": [
+        {
+          "path": "$DOWNLOAD/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-exists",
+      "allow": [
+        {
+          "path": "$DOWNLOAD/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-rename",
+      "allow": [
+        {
+          "path": "$DOWNLOAD/**"
+        }
+      ]
+    },
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        {
+          "path": "$DOWNLOAD/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-remove",
+      "allow": [
+        {
+          "path": "$DOWNLOAD/**"
+        }
+      ]
+    }
   ]
 }
