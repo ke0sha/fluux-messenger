@@ -623,6 +623,43 @@ describe('MessageAttachments own-message threading', () => {
   })
 })
 
+describe('MessageAttachments Windows text files', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    usePlatform('desktop', 'windows')
+    useAttachmentUrlSpy.mockReturnValue({
+      url: null,
+      isLoading: false,
+      error: null,
+    })
+    useCachedMediaUrlSpy.mockReturnValue({ cachedUrl: null, isPeeking: false })
+  })
+
+  afterEach(() => {
+    restorePlatform?.()
+    restorePlatform = undefined
+  })
+
+  it.each([
+    ['text/plain', 'example.txt'],
+    ['application/octet-stream', 'wireguard.conf'],
+    ['application/json', 'data.json'],
+  ])('renders %s attachment %s as an open/download card, not inline preview', (mediaType, name) => {
+    const attachment: FileAttachment = {
+      url: `https://example.com/${name}`,
+      mediaType,
+      name,
+    }
+    const { container } = render(<MessageAttachments attachment={attachment} />)
+
+    expect(screen.getByRole('group', { name })).toBeInTheDocument()
+    expect(screen.getByText(name)).toBeInTheDocument()
+    expect(screen.getAllByRole('button')).toHaveLength(2) // open + download
+    expect(container.querySelector('pre')).toBeNull()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+  })
+})
+
 // ── onMediaLoad notify gating ────────────────────────────────────────────────
 //
 // The scroll layer is poked (onLoad → onMediaLoad → handleMediaLoad) on EVERY

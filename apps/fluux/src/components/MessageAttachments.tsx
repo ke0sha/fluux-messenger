@@ -7,6 +7,7 @@
 
 import type { FileAttachment } from '@fluux/sdk'
 import { canPreviewAsText } from '@/utils/thumbnail'
+import { platform } from '@/platform'
 import { TextFilePreview } from './TextFilePreview'
 import {
   ImageAttachment,
@@ -32,7 +33,11 @@ interface MessageAttachmentsProps {
 export function MessageAttachments({ attachment, onMediaLoad, isOwnMessage }: MessageAttachmentsProps) {
   if (!attachment) return null
 
-  const canPreview = canPreviewAsText(attachment.mediaType, attachment.name)
+  // On Windows Custom, text/code attachments are files, not inline previews.
+  // Using FileAttachmentCard also ensures both card-click and the download
+  // button use the native Downloads/openPath handler instead of a browser link.
+  const isWindowsDesktop = platform().shell === 'desktop' && platform().os === 'windows'
+  const canPreview = !isWindowsDesktop && canPreviewAsText(attachment.mediaType, attachment.name)
 
   return (
     <>

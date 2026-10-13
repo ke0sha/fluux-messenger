@@ -198,6 +198,9 @@ interface MessageComposerProps {
   attachmentDisabledReason?: string
   /** Pending attachment staged for sending */
   pendingAttachment?: PendingAttachment | null
+  /** Multiple files staged in one-to-one chats */
+  pendingAttachments?: PendingAttachment[]
+  onRemovePendingAttachmentAt?: (index: number) => void
   /** Callback to remove pending attachment */
   onRemovePendingAttachment?: () => void
   /** Whether sending is disabled (e.g., when offline) */
@@ -266,6 +269,8 @@ export function MessageComposer({
   attachmentDisabledReason,
   isUploadSupported = false,
   pendingAttachment,
+  pendingAttachments,
+  onRemovePendingAttachmentAt,
   onRemovePendingAttachment,
   disabled = false,
   sendDisabled = false,
@@ -384,6 +389,8 @@ export function MessageComposer({
   useFloatingLayerBounds(attachPanelRef, showAttachMenu)
   const emojiPickerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const stagedAttachments = pendingAttachments ?? (pendingAttachment ? [pendingAttachment] : [])
+  const hasPendingFiles = stagedAttachments.length > 0
 
   // Typing notification refs
   const lastComposingSentRef = useRef(0)
@@ -667,7 +674,7 @@ export function MessageComposer({
     const hasAttachmentOnly = editingMessage && !trimmed && attachmentToKeep
 
     // For normal messages, require text OR pending attachment. For edits, allow empty to trigger retraction or attachment-only.
-    if (!trimmed && !isEmptyEdit && !hasAttachmentOnly && !pendingAttachment) return
+    if (!trimmed && !isEmptyEdit && !hasAttachmentOnly && !hasPendingFiles) return
     if (sending) return
 
     // Slash commands (never while editing, replying, or in a disabled mode such
@@ -868,10 +875,7 @@ export function MessageComposer({
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file && onFileSelect) {
-      selectFile(file)
-    }
+    for (const file of Array.from(e.target.files ?? [])) selectFile(file)
     // Reset file input so the same file can be selected again
     e.target.value = ''
   }
@@ -1037,56 +1041,28 @@ export function MessageComposer({
 
       {attachmentDisabledReason && <p role="note" className="px-4 py-2 text-xs text-fluux-muted">{attachmentDisabledReason}</p>}
 
-      {/* Pending attachment preview */}
-      {pendingAttachment && !editingMessage && (
-        <div className="px-3 py-2 flex items-center gap-3 border-s-2 border-b border-fluux-border border-s-fluux-brand">
-          {/* Thumbnail preview for images/videos */}
-          {pendingAttachment.previewUrl && pendingAttachment.file.type.startsWith('image/') ? (
-            <img
-              src={pendingAttachment.previewUrl}
-              alt={pendingAttachment.file.name}
-              className="size-12 object-cover rounded flex-shrink-0"
-            />
-          ) : pendingAttachment.previewUrl && pendingAttachment.file.type.startsWith('video/') ? (
-            <div className="size-12 relative flex-shrink-0">
-              <img
-                src={pendingAttachment.previewUrl}
-                alt={pendingAttachment.file.name}
-                className="w-full h-full object-cover rounded"
-              />
-              <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded">
-                <div className="size-4 border-2 border-white rounded-full flex items-center justify-center">
-                  <div className="size-0 border-s-[5px] border-s-white border-y-[3px] border-y-transparent ms-0.5" />
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="size-12 flex items-center justify-center bg-fluux-bg rounded flex-shrink-0">
-              {pendingAttachment.file.type.startsWith('image/') ? (
-                <Image className="size-6 text-fluux-muted" />
+      {/* Files queued for the next send (each file becomes its own message). */}
+      {stagedAttachments.length > 0 && !editingMessage && (
+        <div className="px-3 py-2 flex flex-wrap gap-2 border-s-2 border-b border-fluux-border border-s-fluux-brand">
+          {stagedAttachments.map((pending, index) => (
+            <div key={`${pending.file.name}-${index}`} className="min-w-0 max-w-[280px] flex items-center gap-2 rounded-lg bg-fluux-bg p-2">
+              {pending.previewUrl && pending.file.type.startsWith('image/') ? (
+                <img src={pending.previewUrl} alt={pending.file.name} className="size-10 object-cover rounded flex-shrink-0" />
               ) : (
-                <FileText className="size-6 text-fluux-muted" />
+                <FileText className="size-5 text-fluux-muted flex-shrink-0" />
               )}
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-fluux-text truncate" title={pending.file.name}>{pending.file.name}</p>
+                <p className="text-xs text-fluux-muted">{formatFileSize(pending.file.size)}</p>
+              </div>
+              <button type="button"
+                onClick={() => pendingAttachments ? onRemovePendingAttachmentAt?.(index) : onRemovePendingAttachment?.()}
+                className="p-1 text-fluux-muted hover:text-fluux-error flex-shrink-0"
+                aria-label={t('chat.removeAttachment')}>
+                <X className="size-4" />
+              </button>
             </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-fluux-text truncate">
-              {pendingAttachment.file.name}
-            </p>
-            <p className="text-xs text-fluux-muted">
-              {formatFileSize(pendingAttachment.file.size)}
-            </p>
-          </div>
-          <Tooltip content={t('chat.removeAttachment')} position="top">
-            <button
-              type="button"
-              onClick={onRemovePendingAttachment}
-              className="p-1 text-fluux-muted hover:text-fluux-error transition-colors flex-shrink-0"
-              aria-label={t('chat.removeAttachment')}
-            >
-              <X className="size-4" />
-            </button>
-          </Tooltip>
+          ))}
         </div>
       )}
 
@@ -1128,6 +1104,7 @@ export function MessageComposer({
         <input
           ref={fileInputRef}
           type="file"
+          multiple={Boolean(pendingAttachments)}
           disabled={!!attachmentDisabledReason}
           className="hidden"
           onChange={handleFileChange}
@@ -1271,12 +1248,12 @@ export function MessageComposer({
             if (e.animationName === 'send-press') setLaunching(false)
           }}
         >
-          {(!((!text.trim() && !pendingAttachment) || sending || disabled || sendDisabled) || launching) && (
+          {(!((!text.trim() && !hasPendingFiles) || sending || disabled || sendDisabled) || launching) && (
             <span className="send-aurora-glow" aria-hidden="true" />
           )}
           <button
             type="submit"
-            disabled={(!text.trim() && !pendingAttachment) || sending || disabled || sendDisabled}
+            disabled={(!text.trim() && !hasPendingFiles) || sending || disabled || sendDisabled}
             aria-label={t('chat.send', 'Send')}
             title={
               inputClass === 'command'

@@ -76,20 +76,19 @@ export function useDragAndDrop({
     if (rejectDrop()) return
     if (!isUploadSupported) return
 
-    try {
-      // Dynamic import to avoid loading Tauri API in browser
-      const { readFile } = await import('@tauri-apps/plugin-fs')
-      const path = paths[0] // Single file for now
-      const filename = getFilename(path)
-      const contents = await readFile(path)
-      const mimeType = getMimeType(filename)
-
-      // Create File object from contents
-      const file = new File([contents], filename, { type: mimeType })
+    // Dynamic import to avoid loading Tauri API in browser.
+    const { readFile } = await import('@tauri-apps/plugin-fs')
+    for (const path of paths) {
       if (rejectDrop()) return
-      await policy.current.onFileDrop(file)
-    } catch (err) {
-      console.error('[useDragAndDrop] Failed to read dropped file:', err)
+      try {
+        const filename = getFilename(path)
+        const contents = await readFile(path)
+        const mimeType = getMimeType(filename)
+        await policy.current.onFileDrop(new File([contents], filename, { type: mimeType }))
+      } catch (err) {
+        // A missing/unreadable file must not block the remaining dropped files.
+        console.error('[useDragAndDrop] Failed to read dropped file:', path, err)
+      }
     }
   }
 
@@ -151,8 +150,11 @@ export function useDragAndDrop({
         return
       }
       if (files.length > 0 && isUploadSupported) {
-        // Upload first file (single file upload for now)
-        void onFileDrop(files[0])
+        // Snapshot the FileList before the browser releases the drag event.
+        const dropped = Array.from(files)
+        void (async () => {
+          for (const file of dropped) await policy.current.onFileDrop(file)
+        })()
       }
     }
   }
