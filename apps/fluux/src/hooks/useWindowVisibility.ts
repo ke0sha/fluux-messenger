@@ -3,7 +3,6 @@ import { connectionStore, chatStore, roomStore } from '@fluux/sdk'
 import { dismissNotification } from '@/utils/dismissNotification'
 import { refreshCurrentDay } from '@/stores/currentDayStore'
 import { isViewportAtBottom } from '@/utils/viewportAtBottom'
-import { platform } from '@/platform'
 
 /**
  * Hook to track window focus and update the SDK store.
@@ -47,23 +46,45 @@ export function useWindowVisibility(): void {
       if (!wasFocused && isFocused) {
         const activeConversationId = chatStore.getState().activeConversationId
         if (activeConversationId) {
-          // On Windows, restoring a hidden/minimized window must not implicitly
-          // mark the last-open conversation as read. Leave unread state untouched
-          // until the user explicitly reads/navigates the conversation.
-          if (platform().os !== 'windows' && isViewportAtBottom('conversation', activeConversationId)) {
+          if (isViewportAtBottom('conversation', activeConversationId)) {
             chatStore.getState().markAsRead(activeConversationId)
           }
           void dismissNotification('conversation', activeConversationId)
         }
         const activeRoomJid = roomStore.getState().activeRoomJid
         if (activeRoomJid) {
-          if (platform().os !== 'windows' && isViewportAtBottom('room', activeRoomJid)) {
+          if (isViewportAtBottom('room', activeRoomJid)) {
             roomStore.getState().markAsRead(activeRoomJid)
           }
           void dismissNotification('room', activeRoomJid)
         }
       }
     }
+
+    // An unread message can arrive while the conversation is already open. In
+    // that case there is no navigation/focus event to clear the unread counter.
+    // Only acknowledge it when the actual scroll viewport is at its live edge.
+    // A short defer lets the message list finish rendering and scrolling first.
+    let pendingRead: ReturnType<typeof setTimeout> | undefined
+    const scheduleVisibleChatRead = () => {
+      if (pendingRead !== undefined) clearTimeout(pendingRead)
+      pendingRead = setTimeout(() => {
+        pendingRead = undefined
+        if (!document.hasFocus() || document.visibilityState === 'hidden') return
+        const state = chatStore.getState()
+        const id = state.activeConversationId
+        if (!id || !isViewportAtBottom('conversation', id)) return
+        const unread = state.conversations.get(id)?.unreadCount ?? 0
+        if (unread > 0) state.markAsRead(id)
+      }, 100)
+    }
+    const unsubscribeChat = chatStore.subscribe((state, previous) => {
+      const id = state.activeConversationId
+      if (!id || state === previous) return
+      const unread = state.conversations.get(id)?.unreadCount ?? 0
+      const oldUnread = previous.conversations.get(id)?.unreadCount ?? 0
+      if (unread > oldUnread) scheduleVisibleChatRead()
+    })
 
     // Set initial state
     handleFocusChange()
@@ -76,6 +97,8 @@ export function useWindowVisibility(): void {
     window.addEventListener('blur', handleFocusChange)
 
     return () => {
+      unsubscribeChat()
+      if (pendingRead !== undefined) clearTimeout(pendingRead)
       document.removeEventListener('visibilitychange', handleFocusChange)
       window.removeEventListener('focus', handleFocusChange)
       window.removeEventListener('blur', handleFocusChange)
