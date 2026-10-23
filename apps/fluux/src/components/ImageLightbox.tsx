@@ -2,7 +2,7 @@
  * Full-screen lightbox overlay for viewing image attachments.
  * Triggered by clicking on an image attachment in chat/room views.
  */
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { useCloseOnEscape } from '@/hooks/useCloseOnEscape'
@@ -41,6 +41,50 @@ export function ImageLightbox({ src, alt, downloadUrl, filename, encryption, pla
   const { cachedUrl: cachedFullRes } = useCachedMediaUrl(src, encryption, !allowFetch)
   const imageMenu = useContextMenu()
   const overlayRef = useRef<HTMLDivElement>(null)
+  const imageRef = useRef<HTMLImageElement>(null)
+  const [scale, setScale] = useState(1)
+  const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const dragRef = useRef<{ x: number; y: number } | null>(null)
+
+  // Use a non-passive native listener so wheel zoom never scrolls/zooms the WebView.
+  useEffect(() => {
+    const image = imageRef.current
+    if (!image) return
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault()
+      const direction = event.deltaY < 0 ? 1.2 : 1 / 1.2
+      setScale(previous => {
+        const next = Math.max(1, Math.min(5, previous * direction))
+        if (next === 1) setOffset({ x: 0, y: 0 })
+        return next
+      })
+    }
+    image.addEventListener('wheel', handleWheel, { passive: false })
+    return () => image.removeEventListener('wheel', handleWheel)
+  }, [Boolean(proxiedSrc ?? cachedFullRes ?? placeholderSrc)])
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLImageElement>) => {
+    if (scale <= 1 || event.button !== 0) return
+    dragRef.current = { x: event.clientX, y: event.clientY }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.preventDefault()
+  }
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLImageElement>) => {
+    if (!dragRef.current) return
+    const dx = event.clientX - dragRef.current.x
+    const dy = event.clientY - dragRef.current.y
+    dragRef.current = { x: event.clientX, y: event.clientY }
+    setOffset(previous => ({ x: previous.x + dx, y: previous.y + dy }))
+  }
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLImageElement>) => {
+    if (!dragRef.current) return
+    dragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
   useFocusTrap(overlayRef)
   useCloseOnEscape(onClose, true, overlayRef)
 
@@ -98,10 +142,20 @@ export function ImageLightbox({ src, alt, downloadUrl, filename, encryption, pla
       {/* Image */}
       {displaySrc ? (
         <img
+          ref={imageRef}
           src={displaySrc}
           alt={alt || 'Image'}
           className="relative z-10 max-w-[90vw] max-h-[calc((100vh-var(--fluux-window-titlebar-height))*0.85)] object-contain rounded-lg select-none"
           draggable={false}
+          style={{
+            transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+            cursor: scale > 1 ? (dragRef.current ? 'grabbing' : 'grab') : 'default',
+            touchAction: 'none',
+          }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
           onContextMenu={imageMenu.handleContextMenu}
         />
       ) : (

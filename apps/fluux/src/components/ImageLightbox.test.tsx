@@ -246,3 +246,29 @@ describe('ImageLightbox encrypted download', () => {
     expect(downloadAttachmentSpy).not.toHaveBeenCalled()
   })
 })
+
+
+describe('ImageLightbox wheel zoom and drag', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useAttachmentUrlSpy.mockReturnValue({ url: 'blob:fullres', isLoading: false, error: null })
+    useCachedMediaUrlSpy.mockReturnValue({ cachedUrl: null, isPeeking: false })
+  })
+
+  it('zooms the image with the mouse wheel and resets at minimum scale', () => {
+    render(<ImageLightbox src="https://x/full.jpg" downloadUrl="https://x/full.jpg" onClose={() => {}} />)
+    const image = screen.getByRole('img')
+    fireEvent.wheel(image, { deltaY: -100 })
+    expect(image).toHaveStyle({ transform: 'translate(0px, 0px) scale(1.2)' })
+    fireEvent.wheel(image, { deltaY: 100 })
+    expect(image).toHaveStyle({ transform: 'translate(0px, 0px) scale(1)' })
+  })
+
+  it('does not pan the image before zooming', () => {
+    render(<ImageLightbox src="https://x/full.jpg" downloadUrl="https://x/full.jpg" onClose={() => {}} />)
+    const image = screen.getByRole('img')
+    fireEvent.pointerDown(image, { button: 0, clientX: 20, clientY: 30, pointerId: 1 })
+    fireEvent.pointerMove(image, { clientX: 90, clientY: 80, pointerId: 1 })
+    expect(image).toHaveStyle({ transform: 'translate(0px, 0px) scale(1)' })
+  })
+})
