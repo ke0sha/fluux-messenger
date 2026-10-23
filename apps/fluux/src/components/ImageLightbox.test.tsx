@@ -246,3 +246,49 @@ describe('ImageLightbox encrypted download', () => {
     expect(downloadAttachmentSpy).not.toHaveBeenCalled()
   })
 })
+
+
+describe('ImageLightbox wheel zoom and drag', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useAttachmentUrlSpy.mockReturnValue({ url: 'blob:fullres', isLoading: false, error: null })
+    useCachedMediaUrlSpy.mockReturnValue({ cachedUrl: null, isPeeking: false })
+  })
+
+  it('zooms the image with the mouse wheel and resets at minimum scale', () => {
+    render(<ImageLightbox src="https://x/full.jpg" downloadUrl="https://x/full.jpg" onClose={() => {}} />)
+    const image = screen.getByRole('img')
+    fireEvent.wheel(image, { deltaY: -100 })
+    expect(image).toHaveStyle({ transform: 'translate(0px, 0px) scale(1.2)' })
+    fireEvent.wheel(image, { deltaY: 100 })
+    expect(image).toHaveStyle({ transform: 'translate(0px, 0px) scale(1)' })
+  })
+
+  it('does not pan the image before zooming', () => {
+    render(<ImageLightbox src="https://x/full.jpg" downloadUrl="https://x/full.jpg" onClose={() => {}} />)
+    const image = screen.getByRole('img')
+    fireEvent.pointerDown(image, { button: 0, clientX: 20, clientY: 30, pointerId: 1 })
+    fireEvent.pointerMove(image, { clientX: 90, clientY: 80, pointerId: 1 })
+    expect(image).toHaveStyle({ transform: 'translate(0px, 0px) scale(1)' })
+  })
+  it('keeps the image inside a clipped viewport and controls above it', () => {
+    render(<ImageLightbox src="https://x/full.jpg" downloadUrl="https://x/full.jpg" onClose={() => {}} />)
+    const image = screen.getByRole('img')
+    const viewport = image.parentElement!
+    expect(viewport.className).toContain('overflow-hidden')
+    expect(screen.getByTitle('common.close').parentElement?.className).toContain('z-30')
+  })
+
+  it('cannot drag a zoomed image that still fits and clamps movement when it overflows', () => {
+    render(<ImageLightbox src="https://x/full.jpg" downloadUrl="https://x/full.jpg" onClose={() => {}} />)
+    const image = screen.getByRole('img')
+    const viewport = image.parentElement!
+    Object.defineProperties(image, { offsetWidth: { configurable: true, value: 200 }, offsetHeight: { configurable: true, value: 100 } })
+    Object.defineProperties(viewport, { clientWidth: { configurable: true, value: 600 }, clientHeight: { configurable: true, value: 400 } })
+    fireEvent.wheel(image, { deltaY: -100 })
+    fireEvent.pointerDown(image, { button: 0, clientX: 10, clientY: 10, pointerId: 1 })
+    fireEvent.pointerMove(image, { clientX: 200, clientY: 200, pointerId: 1 })
+    expect(image).toHaveStyle({ transform: 'translate(0px, 0px) scale(1.2)' })
+  })
+
+})
