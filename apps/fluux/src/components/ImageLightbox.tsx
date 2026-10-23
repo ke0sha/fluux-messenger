@@ -2,7 +2,7 @@
  * Full-screen lightbox overlay for viewing image attachments.
  * Triggered by clicking on an image attachment in chat/room views.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { useCloseOnEscape } from '@/hooks/useCloseOnEscape'
@@ -42,29 +42,64 @@ export function ImageLightbox({ src, alt, downloadUrl, filename, encryption, pla
   const imageMenu = useContextMenu()
   const overlayRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const displaySrc = proxiedSrc ?? cachedFullRes ?? placeholderSrc
   const [scale, setScale] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const dragRef = useRef<{ x: number; y: number } | null>(null)
 
-  // Use a non-passive native listener so wheel zoom never scrolls/zooms the WebView.
+  // Constrain movement to the portion actually cropped by the viewport.
+  // When the image still fits, both axes remain fixed at the center.
+  const clampOffset = (next: { x: number; y: number }, zoom: number) => {
+    const image = imageRef.current
+    const viewport = viewportRef.current
+    if (!image || !viewport) return { x: 0, y: 0 }
+    const maxX = Math.max(0, (image.offsetWidth * zoom - viewport.clientWidth) / 2)
+    const maxY = Math.max(0, (image.offsetHeight * zoom - viewport.clientHeight) / 2)
+    return {
+      x: Math.max(-maxX, Math.min(maxX, next.x)),
+      y: Math.max(-maxY, Math.min(maxY, next.y)),
+    }
+  }
+
+  // Re-clamp whenever zoom changes or the containing window is resized.
+  useLayoutEffect(() => {
+    setOffset(previous => {
+      const next = clampOffset(previous, scale)
+      return previous.x === next.x && previous.y === next.y ? previous : next
+    })
+  }, [scale, displaySrc])
+
+  useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      setOffset(previous => {
+        const next = clampOffset(previous, scale)
+        return previous.x === next.x && previous.y === next.y ? previous : next
+      })
+    })
+    observer.observe(viewport)
+    return () => observer.disconnect()
+  }, [scale, displaySrc])
+
+  // Wheel zoom only applies over the image; prevent zooming the whole WebView.
   useEffect(() => {
     const image = imageRef.current
     if (!image) return
     const handleWheel = (event: WheelEvent) => {
       event.preventDefault()
       const direction = event.deltaY < 0 ? 1.2 : 1 / 1.2
-      setScale(previous => {
-        const next = Math.max(1, Math.min(5, previous * direction))
-        if (next === 1) setOffset({ x: 0, y: 0 })
-        return next
-      })
+      setScale(previous => Math.max(1, Math.min(5, previous * direction)))
     }
     image.addEventListener('wheel', handleWheel, { passive: false })
     return () => image.removeEventListener('wheel', handleWheel)
-  }, [Boolean(proxiedSrc ?? cachedFullRes ?? placeholderSrc)])
+  }, [displaySrc])
 
   const handlePointerDown = (event: React.PointerEvent<HTMLImageElement>) => {
-    if (scale <= 1 || event.button !== 0) return
+    if (event.button !== 0) return
+    const available = clampOffset({ x: Infinity, y: Infinity }, scale)
+    if (available.x === 0 && available.y === 0) return
     dragRef.current = { x: event.clientX, y: event.clientY }
     event.currentTarget.setPointerCapture(event.pointerId)
     event.preventDefault()
@@ -75,7 +110,7 @@ export function ImageLightbox({ src, alt, downloadUrl, filename, encryption, pla
     const dx = event.clientX - dragRef.current.x
     const dy = event.clientY - dragRef.current.y
     dragRef.current = { x: event.clientX, y: event.clientY }
-    setOffset(previous => ({ x: previous.x + dx, y: previous.y + dy }))
+    setOffset(previous => clampOffset({ x: previous.x + dx, y: previous.y + dy }, scale))
   }
 
   const handlePointerUp = (event: React.PointerEvent<HTMLImageElement>) => {
@@ -88,7 +123,6 @@ export function ImageLightbox({ src, alt, downloadUrl, filename, encryption, pla
   useFocusTrap(overlayRef)
   useCloseOnEscape(onClose, true, overlayRef)
 
-  const displaySrc = proxiedSrc ?? cachedFullRes ?? placeholderSrc
   // Already-resolved (decrypted or plaintext-proxied) full-res bytes, or null.
   const resolvedUrl = proxiedSrc ?? cachedFullRes
 
@@ -120,7 +154,7 @@ export function ImageLightbox({ src, alt, downloadUrl, filename, encryption, pla
         className="absolute inset-0 cursor-default"
       />
       {/* Top-right controls */}
-      <div className="absolute top-4 end-4 z-10 flex items-center gap-2">
+      <div className="absolute top-4 end-4 z-30 flex items-center gap-2">
         <button
           type="button"
           onClick={handleDownload}
@@ -139,32 +173,39 @@ export function ImageLightbox({ src, alt, downloadUrl, filename, encryption, pla
         </button>
       </div>
 
-      {/* Image */}
-      {displaySrc ? (
-        <img
-          ref={imageRef}
-          src={displaySrc}
-          alt={alt || 'Image'}
-          className="relative z-10 max-w-[90vw] max-h-[calc((100vh-var(--fluux-window-titlebar-height))*0.85)] object-contain rounded-lg select-none"
-          draggable={false}
-          style={{
-            transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-            cursor: scale > 1 ? (dragRef.current ? 'grabbing' : 'grab') : 'default',
-            touchAction: 'none',
-          }}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-          onContextMenu={imageMenu.handleContextMenu}
-        />
-      ) : (
-        isLoading && <Loader2 className="size-8 text-white/70 animate-spin" />
-      )}
+      {/* The image is clipped to the lightbox viewport; controls stay above it. */}
+      <div
+        ref={viewportRef}
+        className="relative z-10 flex-1 min-h-0 w-full flex items-center justify-center overflow-hidden pointer-events-none"
+      >
+        {displaySrc ? (
+          <img
+            ref={imageRef}
+            src={displaySrc}
+            alt={alt || 'Image'}
+            className="max-w-[90%] max-h-[85%] object-contain rounded-lg select-none pointer-events-auto"
+            draggable={false}
+            style={{
+              transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+              cursor: clampOffset({ x: Infinity, y: Infinity }, scale).x > 0 || clampOffset({ x: Infinity, y: Infinity }, scale).y > 0
+                ? (dragRef.current ? 'grabbing' : 'grab') : 'default',
+              touchAction: 'none',
+            }}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            onLoad={() => setOffset(previous => clampOffset(previous, scale))}
+            onContextMenu={imageMenu.handleContextMenu}
+          />
+        ) : (
+          isLoading && <Loader2 className="size-8 text-white/70 animate-spin" />
+        )}
+      </div>
 
-      {/* Filename label */}
+      {/* Filename remains on top of the image, inside the modal. */}
       {filename && (
-        <div className="relative z-10 mt-3 text-white/70 text-sm truncate max-w-[90vw]">
+        <div className="absolute bottom-3 inset-x-16 z-30 text-center text-white/70 text-sm truncate pointer-events-none">
           {filename}
         </div>
       )}
