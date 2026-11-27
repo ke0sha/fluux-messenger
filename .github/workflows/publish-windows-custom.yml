@@ -59,7 +59,7 @@ jobs:
           projectPath: apps/fluux
           tagName: v${{ inputs.version }}
           releaseName: Fluux Messenger Custom v${{ inputs.version }}
-          releaseBody: ${{ inputs.changelog }}          
+          releaseBody: ${{ inputs.changelog }}
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
